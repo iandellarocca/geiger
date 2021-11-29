@@ -4,8 +4,8 @@ from datetime import datetime
 from typing import Union, List, Iterator, Tuple, Any
 import matplotlib.pyplot as plt
 
-from randdpy.core.BaseClasses import MeasurementBase, TickedMeasurement, ArrayBase, TickedArrayBase
-from randdpy.Utilities.Multiplot import TickedCountsPlotter
+from geiger.core.base_classes import MeasurementBase, TickedMeasurement, ArrayBase, TickedArrayBase
+from geiger.utilities.plotting import TickedCountsPlotter
 
 
 class Counts(MeasurementBase):
@@ -221,19 +221,8 @@ class CountsArray(ArrayBase):
     -----
     Users will probably not need to create CountsArray instances, they will be used after being created inside the
     SMLReader.
-
-    Examples
-    --------
-    >>> from randdpy import SMLReader
-    >>> sml = SMLReader(...)
-    >>> # The neutron_foregrounds property of the SMLReader returns a CountsArray
-    >>> sml.neutron_foregrounds
-    <randdpy.core.Counts.CountsArray at 0x11d391dcd08>
-    >>> # The `Counts` instances are referenced by their name attributes:
-    >>> sml.neutron_foregrounds['DetN1']
-    <randdpy.core.Counts.Counts at 0x11d06ba3608>
-
     """
+
     def __init__(self, counts: List[Counts]):
         super(CountsArray, self).__init__(counts)
 
@@ -808,10 +797,10 @@ class TickedCountsArray(TickedArrayBase):
         Method which plots each TickedCounts as a function of time, returning the figure and axes.
     """
     def __init__(self, t_counts: List[TickedCounts]):
-        super(TickedCountsArray, self).__init__(t_counts)
+        super().__init__(t_counts)
 
     def __getitem__(self, item: str) -> TickedCounts:
-        return super(TickedCountsArray, self).__getitem__(item)
+        return super().__getitem__(item)
 
     def get_single_tick(self, tick_num: int) -> CountsArray:
         """

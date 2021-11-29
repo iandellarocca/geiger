@@ -10,10 +10,10 @@ import matplotlib.pyplot as plt
 import struct
 import requests
 
-from randdpy.core.Calibration import Calibration
-from randdpy.core.BaseClasses import MeasurementBase, TickedMeasurement, ArrayBase, TickedArrayBase
-from randdpy.core.Counts import Counts, CountsArray, TickedCounts, TickedCountsArray
-from randdpy.Utilities.Multiplot import SpectrumPlotter
+from geiger.core.calibration import Calibration
+from geiger.core.base_classes import MeasurementBase, TickedMeasurement, ArrayBase, TickedArrayBase
+from geiger.core.counts import Counts, CountsArray, TickedCounts, TickedCountsArray
+from geiger.utilities.plotting import SpectrumPlotter
 
 
 class Spectrum(MeasurementBase):
@@ -1406,16 +1406,12 @@ class TickedSpectrum(TickedMeasurement):
             width of the window, in ticks. Default: 1.
         mode : int
             sets the mode of the rolling window. default: 0.
-
-
-        Modes
-        -----
-        0. windows are always full. For a TickedSpectrum with N ticks, there will be N - tick_window_width + 1
-        spectra yielded.
-        1. windows are always at least half full. For a TickedSpectrum with N ticks, there will be N spectra
-        yielded.
-        2. windows are always at least one tick full. For a TickedSpectrum with N ticks, there will be
-        N + tick_window_width - 1 spectra yielded.
+            0. windows are always full. For a TickedSpectrum with N ticks, there will be N - tick_window_width + 1
+               spectra yielded.
+            1. windows are always at least half full. For a TickedSpectrum with N ticks, there will be N spectra
+               yielded.
+            2. windows are always at least one tick full. For a TickedSpectrum with N ticks, there will be
+               N + tick_window_width - 1 spectra yielded.
         """
         size = self.simple_windowed_spectra_iterations(tick_window_width, mode)
         if mode == 0:

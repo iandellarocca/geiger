@@ -6,97 +6,16 @@ from glob import glob
 from typing import NoReturn, Union, List, Tuple, Type, Dict
 from scipy.stats import norm as normal_dist
 from copy import deepcopy
-from tqdm import trange
-import pickle
 
-from randdpy.core.Calibration import Calibration
-from randdpy.core.Spectrum import Spectrum, EmissionSpectrum
-from randdpy.Algorithms.Deconvolution.DeconvolutionAlgorithmBase import DeconvolutionAlgorithm
-from randdpy.Algorithms.Deconvolution.SheppVardi import SheppVardiDeconvolution
-
-
-class ScatterMatrix:
-    def __init__(self,
-                 matrix: np.ndarray,
-                 calibration: Calibration):
-        self.matrix = matrix
-        self.calibration = calibration
-
-    def convolve_spectrum(self, spectrum: Spectrum) -> Spectrum:
-        """ Method which convolves an incident spectrum with the scatter-matrix,
-        and returns the scattered spectrum.
-
-        Parameters
-        ----------
-        spectrum : Spectrum
-            Spectrum to be convolved. Note, spectrum will be rebinned if not
-            same calibration and size as the array of responses in the
-            scatter-matrix.
-
-        Returns
-        -------
-        Instance of core.Spectrum class
-            Convolution of incident spectrum with Q-matrix.
-        """
-        # Check if same number of n_channels and calibration.
-        if not spectrum.calibration == self.calibration:
-            spectrum = spectrum.rebin(self.calibration)
-
-        name = spectrum.name + " " if spectrum.name is not None else ""
-        ret_spec = Spectrum(self.calibration.energies,
-                            np.dot(self.matrix.T, spectrum.counts),
-                            live_time=spectrum.live_time,
-                            real_time=spectrum.real_time,
-                            name=name + "convolved",
-                            comment=spectrum.comment,
-                            start_time=spectrum.start_time)
-        return ret_spec
-
-    def save(self, file_name: str):
-        d = deepcopy(self.__dict__)
-        d['calibration'] = self.calibration.__dict__
-        with open(file_name, 'wb') as f:
-            pickle.dump(d, f)
-
-    @classmethod
-    def from_engbin_directory(cls,
-                              engbin_directory: str,
-                              photons_per_engbin: int,
-                              calibration: Calibration = None,
-                              energy_column: int = 0,
-                              counts_column: int = 1,
-                              start_index: int = 0):
-        engbin_files = glob(os.path.join(engbin_directory, "engbin*.eb"))
-        matrix: ScatterMatrix = None if calibration is None else cls(np.zeros((calibration.n_channels,
-                                                                               calibration.n_channels)),
-                                                                     calibration)
-        for i in trange(start_index, start_index+len(engbin_files)):
-            engbin_spectrum = Spectrum.from_txt(os.path.join(engbin_directory, f"engbin{i}.eb"),
-                                                energy_column=energy_column, counts_column=counts_column)
-
-            if calibration is not None and engbin_spectrum.calibration != calibration:
-                engbin_spectrum = engbin_spectrum.rebin(calibration)
-
-            if matrix is None:
-                matrix = cls(np.zeros((engbin_spectrum.calibration.n_channels,
-                                       engbin_spectrum.calibration.n_channels)), engbin_spectrum.calibration)
-            matrix.matrix[i - start_index] = engbin_spectrum.counts / photons_per_engbin
-        return matrix
-
-    @classmethod
-    def load(cls, file_name: str) -> ScatterMatrix:
-        with open(file_name, 'rb') as f:
-            d = pickle.load(f)
-        calibration = Calibration()
-        calibration.__dict__ = d['calibration']
-        matrix = ScatterMatrix(d['matrix'], calibration)
-        return matrix
+from geiger.core.calibration import Calibration
+from geiger.core.spectrum import Spectrum, EmissionSpectrum
+from geiger.algorithms.deconvolution import DeconvolutionAlgorithm, MLEM
 
 
 DeconvolutionAlgo = Type[DeconvolutionAlgorithm]
 
 
-class QMatrix:
+class SpectralResponseMatrix:
     def __init__(
             self,
             measurement_calibration: Calibration = Calibration(),
@@ -272,7 +191,7 @@ class QMatrix:
         """
         self.eff_data = self.engbins.sum(axis=1) / self.photons_per_engbin
 
-    def convolve_spectrum(self, spectrum: Spectrum, matrix: str = "q_matrix", with_errors=False) -> Spectrum:
+    def convolve_spectrum(self, spectrum: Spectrum, matrix: str = "q_matrix", with_errors: bool = False) -> Spectrum:
         """ Function which convolves an incident spectrum with the Q-matrix,
         and returns the convolved spectrum.
 
@@ -284,12 +203,15 @@ class QMatrix:
             Q-matrix.
         matrix : str
             Either 'q_matrix' (default) or 'engbins'
+        with_errors : bool
+            Convolve the uncertainties in the input spectrum into the convolved spectrum.
 
         Returns
         -------
-        Instance of core.Spectrum class
-            Convolution of incident spectrum with Q-matrix.
+        Instance of Spectrum class
+            Convolution of incident spectrum with response-matrix.
         """
+        
         # Check if same number of n_channels and calibration.
         if not spectrum.calibration == self.i_calibration:
             spectrum = spectrum.rebin(self.i_calibration)
@@ -311,8 +233,7 @@ class QMatrix:
 
     def generate_spectrum_from_lara_text(self,
                                          lara_txt_file: str,
-                                         n: int = 1.0E6,
-                                         scatter: ScatterMatrix = None) -> Spectrum:
+                                         n: int = 1.0E6) -> Spectrum:
         """ Method for generating a modelled spectrum from lara isotope data.
         Data can be downloaded here:
             http://www.nucleide.org/Laraweb/index.php
@@ -323,8 +244,6 @@ class QMatrix:
             Path to the lara text file.
         n : int
             Number of photons incident on the detector
-        scatter : ScatterMatrix
-            Optional scatter matrix to convolve the incident spectrum with before q-matrix convolution.
 
         Returns
         -------
@@ -332,14 +251,11 @@ class QMatrix:
         """
         inc = EmissionSpectrum.from_lara_decay_data_file(lara_txt_file, self.i_calibration)
         inc.counts *= n
-        if scatter is not None:
-            inc = scatter.convolve_spectrum(inc)
         return self.convolve_spectrum(inc)
 
     def generate_spectrum_from_lara_online(self,
                                            isotope: str = "Cs-137",
-                                           n: int = 1.0E6,
-                                           scatter: ScatterMatrix = None) -> Spectrum:
+                                           n: int = 1.0E6) -> Spectrum:
         """ Method for generating a modelled spectrum from lara isotope data.
         Data can be downloaded here:
             http://www.nucleide.org/Laraweb/index.php
@@ -350,8 +266,6 @@ class QMatrix:
             Isotope in this format: "Cs-137"
         n : int
             Number of photons incident on the detector
-        scatter : ScatterMatrix
-            Optional scatter matrix to convolve the incident spectrum with before q-matrix convolution.
 
         Returns
         -------
@@ -359,8 +273,6 @@ class QMatrix:
         """
         inc = EmissionSpectrum.from_lara_online(isotope, self.i_calibration)
         inc.counts *= n
-        if scatter is not None:
-            inc = scatter.convolve_spectrum(inc)
         return self.convolve_spectrum(inc)
 
     def rebin_measurement_axis(self, new_calibration):
@@ -386,7 +298,7 @@ class QMatrix:
             spectrum: Spectrum,
             iterations: int = 1000,
             init: np.ndarray = None,
-            method: DeconvolutionAlgo = SheppVardiDeconvolution
+            method: DeconvolutionAlgo = MLEM
     ) -> Tuple[Spectrum, Spectrum]:
         """ Method for deconvolving a spectrum using this Q-matrix. Uses the Shepp and Vardi MLEM algorithm by default.
 
@@ -432,7 +344,7 @@ class QMatrix:
             iterations: int = 1000,
             bootstraps: int = 100,
             init: np.ndarray = None,
-            method: DeconvolutionAlgo = SheppVardiDeconvolution,
+            method: DeconvolutionAlgo = MLEM,
             progress: bool = False
     ) -> Tuple[Spectrum, Spectrum]:
         # Check if same number of n_channels and calibration.
